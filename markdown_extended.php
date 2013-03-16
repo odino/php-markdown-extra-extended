@@ -7,6 +7,27 @@ function MarkdownExtended($text, $default_claases = array()){
   return $parser->transform($text);
 }
 
+function doTOC($text) {
+	#    
+	# Adds TOC support by including the following on a single line:
+	#    
+	# [TOC]
+	#    
+	# TOC Requirements:
+	#     * Only headings 2-6
+	#     * Headings must have an ID
+	#     * Builds TOC with headings _after_ the [TOC] tag
+
+	$toc = '';
+	
+	preg_match_all ('/<h([2-6]) id="([0-9a-z_-]+)">(.*?)<\/h\1>/i', $text, $h, PREG_SET_ORDER);
+	foreach ($h as &$m) $toc .= str_repeat ("\t", (int) $m[1]-2)."*\t [${m[3]}](#${m[2]})\n";
+	
+	$toc_content = Markdown($toc);
+
+	return trim ($toc_content, "\n");
+}
+
 class MarkdownExtraExtended_Parser extends MarkdownExtra_Parser {
 	# Tags that are always treated as block tags:
 	var $block_tags_re = 'figure|figcaption|p|div|h[1-6]|blockquote|pre|table|dl|ol|ul|address|form|fieldset|iframe|hr|legend';
