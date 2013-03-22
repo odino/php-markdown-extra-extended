@@ -1725,6 +1725,8 @@ class MarkdownExtra_Parser extends Markdown_Parser {
 	# Extra variables used during extra transformations.
 	var $footnotes = array();
 	var $footnotes_ordered = array();
+	var $footnotes_ref_count = array();
+	var $footnotes_numbers = array();
 	var $abbr_desciptions = array();
 	var $abbr_word_re = '';
 	
@@ -1740,6 +1742,8 @@ class MarkdownExtra_Parser extends Markdown_Parser {
 		
 		$this->footnotes = array();
 		$this->footnotes_ordered = array();
+		$this->footnotes_ref_count = array();
+		$this->footnotes_numbers = array();
 		$this->abbr_desciptions = array();
 		$this->abbr_word_re = '';
 		$this->footnote_counter = 1;
@@ -1758,6 +1762,8 @@ class MarkdownExtra_Parser extends Markdown_Parser {
 	#
 		$this->footnotes = array();
 		$this->footnotes_ordered = array();
+		$this->footnotes_ref_count = array();
+		$this->footnotes_numbers = array();
 		$this->abbr_desciptions = array();
 		$this->abbr_word_re = '';
 		
@@ -2642,7 +2648,7 @@ class MarkdownExtra_Parser extends Markdown_Parser {
 	
 	
 	### Footnotes
-	
+
 	function stripFootnotes($text) {
 	#
 	# Strips link definitions from text, stores the URLs and titles in
@@ -2688,20 +2694,20 @@ class MarkdownExtra_Parser extends Markdown_Parser {
 		return $text;
 	}
 
-	
+
 	function appendFootnotes($text) {
 	#
 	# Append footnote list to text.
 	#
 		$text = preg_replace_callback('{F\x1Afn:(.*?)\x1A:}', 
 			array(&$this, '_appendFootnotes_callback'), $text);
-	
+
 		if (!empty($this->footnotes_ordered)) {
 			$text .= "\n\n";
 			$text .= "<div class=\"footnotes\">\n";
 			$text .= "<hr". $this->empty_element_suffix ."\n";
 			$text .= "<ol>\n\n";
-			
+
 			$attr = " rev=\"footnote\"";
 			if ($this->fn_backlink_class != "") {
 				$class = $this->fn_backlink_class;
@@ -2714,33 +2720,40 @@ class MarkdownExtra_Parser extends Markdown_Parser {
 				$attr .= " title=\"$title\"";
 			}
 			$num = 0;
-			
+
 			while (!empty($this->footnotes_ordered)) {
 				$footnote = reset($this->footnotes_ordered);
 				$note_id = key($this->footnotes_ordered);
 				unset($this->footnotes_ordered[$note_id]);
-				
+				$ref_count = $this->footnotes_ref_count[$note_id];
+				unset($this->footnotes_ref_count[$note_id]);
+				unset($this->footnotes[$note_id]);
+
 				$footnote .= "\n"; # Need to append newline before parsing.
 				$footnote = $this->runBlockGamut("$footnote\n");				
 				$footnote = preg_replace_callback('{F\x1Afn:(.*?)\x1A:}', 
 					array(&$this, '_appendFootnotes_callback'), $footnote);
-				
+
 				$attr = str_replace("%%", ++$num, $attr);
 				$note_id = $this->encodeAttribute($note_id);
-				
-				# Add backlink to last paragraph; create new paragraph if needed.
+
+				# Prepare backlink, multiple backlinks if multiple references
 				$backlink = "<a href=\"#fnref:$note_id\"$attr>&#8617;</a>";
+				for ($ref_num = 2; $ref_num <= $ref_count; ++$ref_num) {
+					$backlink .= " <a href=\"#fnref$ref_num:$note_id\"$attr>&#8617;</a>";
+				}
+				# Add backlink to last paragraph; create new paragraph if needed.
 				if (preg_match('{</p>$}', $footnote)) {
 					$footnote = substr($footnote, 0, -4) . "&#160;$backlink</p>";
 				} else {
 					$footnote .= "\n\n<p>$backlink</p>";
 				}
-				
+
 				$text .= "<li id=\"fn:$note_id\">\n";
 				$text .= $footnote . "\n";
 				$text .= "</li>\n\n";
 			}
-			
+
 			$text .= "</ol>\n";
 			$text .= "</div>";
 		}
@@ -2748,16 +2761,24 @@ class MarkdownExtra_Parser extends Markdown_Parser {
 	}
 	function _appendFootnotes_callback($matches) {
 		$node_id = $this->fn_id_prefix . $matches[1];
-		
+
+		$attr = '';
+
 		# Create footnote marker only if it has a corresponding footnote *and*
 		# the footnote hasn't been used by another marker.
 		if (isset($this->footnotes[$node_id])) {
-			# Transfert footnote content to the ordered list.
-			$this->footnotes_ordered[$node_id] = $this->footnotes[$node_id];
-			unset($this->footnotes[$node_id]);
-			
-			$num = $this->footnote_counter++;
-			$attr = " rel=\"footnote\"";
+			$num =& $this->footnotes_numbers[$node_id];
+			if (!isset($num)) {
+				# Transfer footnote content to the ordered list and give it its
+				# number
+				$this->footnotes_ordered[$node_id] = $this->footnotes[$node_id];
+				$this->footnotes_ref_count[$node_id] = 1;
+				$num = $this->footnote_counter++;
+				$ref_count_mark = '';
+			} else {
+				$ref_count_mark = $this->footnotes_ref_count[$node_id] += 1;
+			}
+
 			if ($this->fn_link_class != "") {
 				$class = $this->fn_link_class;
 				$class = $this->encodeAttribute($class);
@@ -2768,16 +2789,16 @@ class MarkdownExtra_Parser extends Markdown_Parser {
 				$title = $this->encodeAttribute($title);
 				$attr .= " title=\"$title\"";
 			}
-			
+
 			$attr = str_replace("%%", $num, $attr);
 			$node_id = $this->encodeAttribute($node_id);
-			
+
 			return
-				"<sup id=\"fnref:$node_id\">".
+				"<sup id=\"fnref$ref_count_mark:$node_id\">".
 				"<a href=\"#fn:$node_id\"$attr>$num</a>".
 				"</sup>";
 		}
-		
+
 		return "[^".$matches[1]."]";
 	}
 		
